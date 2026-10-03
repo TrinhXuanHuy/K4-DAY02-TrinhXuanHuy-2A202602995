@@ -44,11 +44,25 @@ def load_split(labels_dir: str | Path, fold: int = 0) -> tuple[pd.DataFrame, pd.
     train_df = pd.read_csv(train_file)
     val_df = pd.read_csv(val_file)
     test_df = pd.read_csv(test_file)
+    labels_file = labels_path / "labels.csv"
+    species_map = {}
+    if labels_file.exists():
+        try:
+            labels_info = pd.read_csv(labels_file)
+            if "Species" in labels_info.columns and "Label" in labels_info.columns:
+                species_map = dict(zip(labels_info["Label"], labels_info["Species"]))
+        except Exception:
+            pass
 
     for df, name in [(train_df, "train"), (val_df, "val"), (test_df, "test")]:
-        missing = [c for c in ["Filename", "Label", "Species"] if c not in df.columns]
+        missing = [c for c in ["Filename", "Label"] if c not in df.columns]
         if missing:
             raise ValueError(f"{name} thiếu cột {missing}")
+        if "Species" not in df.columns:
+            if species_map:
+                df["Species"] = df["Label"].map(species_map)
+            else:
+                df["Species"] = df["Label"].map(lambda x: CLASS_NAMES[x] if 0 <= x < len(CLASS_NAMES) else str(x))
 
     return train_df, val_df, test_df
 
