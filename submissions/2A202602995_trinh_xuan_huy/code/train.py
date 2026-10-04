@@ -301,20 +301,32 @@ def run(cfg: Config) -> dict[str, Any]:
     else:
         print(f"[{cfg.exp_id}|seed{cfg.seed}] Bắt đầu huấn luyện trên GPU: {torch.cuda.get_device_name(0)} (AMP: {cfg.amp})", flush=True)
 
+    # Tự động ưu tiên thư mục ảnh cục bộ /content/data/images (nếu có) để tăng tốc 100 lần và tránh treo ổ Google Drive
+    effective_images_dir = cfg.images_dir
+    local_images = Path("/content/data/images")
+    if local_images.exists() and any(local_images.iterdir()):
+        effective_images_dir = str(local_images)
+        print(f"[{cfg.exp_id}|seed{cfg.seed}] Đang đọc ảnh từ SSD cục bộ Colab ({effective_images_dir}) - Tốc độ cực nhanh!", flush=True)
+    else:
+        # Nếu đang đọc trực tiếp từ Google Drive, tự đặt num_workers = 0 để tránh nghẽn/treo tiến trình DataLoader
+        if "/content/drive" in str(Path(effective_images_dir).resolve()):
+            cfg.num_workers = 0
+            print(f"[{cfg.exp_id}|seed{cfg.seed}] Đang đọc ảnh từ Google Drive (đặt num_workers=0 để chống nghẽn/treo ổ đĩa)!", flush=True)
+
     # 1. Đọc và kiểm tra split
     train_df, val_df, test_df = ds.load_split(cfg.labels_dir, cfg.fold)
-    ds.check_split(train_df, val_df, test_df, cfg.images_dir)
+    ds.check_split(train_df, val_df, test_df, effective_images_dir)
 
     # 2. Tạo DataLoaders
     train_tf = ds.build_transforms(train=True, img_size=cfg.img_size, aug=cfg.aug)
     eval_tf = ds.build_transforms(train=False, img_size=cfg.img_size)
 
     train_loader = ds.make_loader(
-        train_df, cfg.images_dir, train_tf, cfg.batch_size, train=True,
+        train_df, effective_images_dir, train_tf, cfg.batch_size, train=True,
         sampler=cfg.sampler, num_workers=cfg.num_workers
     )
     val_loader = ds.make_loader(
-        val_df, cfg.images_dir, eval_tf, cfg.batch_size, train=False,
+        val_df, effective_images_dir, eval_tf, cfg.batch_size, train=False,
         num_workers=cfg.num_workers
     )
 
@@ -471,7 +483,7 @@ def run(cfg: Config) -> dict[str, Any]:
     test_metrics = None
     if cfg.save_test_predictions:
         test_loader = ds.make_loader(
-            test_df, cfg.images_dir, eval_tf, cfg.batch_size, train=False,
+            test_df, effective_images_dir, eval_tf, cfg.batch_size, train=False,
             num_workers=cfg.num_workers
         )
         test_names, test_targets, test_logits, _ = evaluate(model, test_loader, criterion, device)
