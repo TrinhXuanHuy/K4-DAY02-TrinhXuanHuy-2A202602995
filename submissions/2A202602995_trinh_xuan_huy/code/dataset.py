@@ -214,6 +214,11 @@ def make_loader(df: pd.DataFrame, images_dir: str | Path, transform, batch_size:
     import torch
     from torch.utils.data import DataLoader, WeightedRandomSampler
 
+    # Bảo vệ chống treo ổ ảo Google Drive: khi đọc trực tiếp qua Drive, bắt buộc num_workers = 0
+    resolved_path = str(Path(images_dir).resolve())
+    if "/content/drive" in resolved_path:
+        num_workers = 0
+
     dataset = DeepWeedsDataset(df, images_dir, transform)
 
     if train:

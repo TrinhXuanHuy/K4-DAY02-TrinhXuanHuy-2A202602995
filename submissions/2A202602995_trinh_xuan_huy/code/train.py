@@ -65,7 +65,7 @@ class Config:
     warmup_epochs: float = 1.0
     ema_decay: float | None = None
     amp: bool = True
-    num_workers: int = 2
+    num_workers: int = 0
     # --- đường dẫn ---
     images_dir: str = "data/images"
     labels_dir: str = "data/labels"
