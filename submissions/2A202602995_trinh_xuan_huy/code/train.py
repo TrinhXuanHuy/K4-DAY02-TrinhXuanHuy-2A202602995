@@ -334,13 +334,59 @@ def run(cfg: Config) -> dict[str, Any]:
 
     ema = EMA(model, cfg.ema_decay) if cfg.ema_decay is not None else None
 
-    # 5. Huấn luyện từng Epoch
+    # 5. Huấn luyện từng Epoch & Cơ chế Checkpoint Phục hồi khi Sập máy
     best_macro_f1 = -1.0
     best_epoch = 0
     history = []
     checkpoint_path = save_dir / "best_model.pt"
+    last_checkpoint_path = save_dir / "last_checkpoint.pt"
+    history_csv_path = save_dir / "history.csv"
 
-    for epoch in range(1, cfg.epochs + 1):
+    # Kiểm tra 1: Nếu thí nghiệm này đã chạy đủ epochs từ trước, bỏ qua để tiết kiệm thời gian!
+    if history_csv_path.exists() and checkpoint_path.exists():
+        try:
+            prev_hist = pd.read_csv(history_csv_path)
+            if len(prev_hist) >= cfg.epochs:
+                print(f"[{cfg.exp_id}|seed{cfg.seed}] ĐÃ HOÀN THÀNH {len(prev_hist)}/{cfg.epochs} epochs từ trước. Tự động nạp kết quả và bỏ qua train lại!")
+                ckpt = torch.load(checkpoint_path, map_location=device)
+                result = {
+                    "exp_id": cfg.exp_id,
+                    "seed": cfg.seed,
+                    "backbone": cfg.backbone,
+                    "best_epoch": ckpt.get("epoch", cfg.epochs),
+                    "best_val_macro_f1": ckpt.get("macro_f1", 0.0),
+                    "best_val_top1": ckpt.get("top1", 0.0),
+                    "params_m": n_params,
+                    "gmacs": gmacs,
+                    "avg_epoch_time_s": prev_hist["time_s"].mean() if "time_s" in prev_hist else 0.0,
+                    "total_time_s": prev_hist["time_s"].sum() if "time_s" in prev_hist else 0.0,
+                }
+                return result
+        except Exception:
+            pass
+
+    # Kiểm tra 2: Nếu có checkpoint của epoch gần nhất (do sập máy giữa chừng), nạp lại và chạy tiếp!
+    start_epoch = 1
+    if last_checkpoint_path.exists():
+        try:
+            last_ckpt = torch.load(last_checkpoint_path, map_location=device)
+            model.load_state_dict(last_ckpt["model_state_dict"])
+            optimizer.load_state_dict(last_ckpt["optimizer_state_dict"])
+            scheduler.load_state_dict(last_ckpt["scheduler_state_dict"])
+            if cfg.amp and device.type == "cuda" and "scaler_state_dict" in last_ckpt:
+                scaler.load_state_dict(last_ckpt["scaler_state_dict"])
+            if ema is not None and last_ckpt.get("ema_shadow"):
+                ema.shadow = {k: v.to(device) for k, v in last_ckpt["ema_shadow"].items()}
+            best_macro_f1 = last_ckpt.get("best_macro_f1", -1.0)
+            best_epoch = last_ckpt.get("best_epoch", 0)
+            history = last_ckpt.get("history", [])
+            start_epoch = last_ckpt["epoch"] + 1
+            print(f"[{cfg.exp_id}|seed{cfg.seed}] >>> PHÁT HIỆN SẬP NGUỒN! Đang phục hồi từ Epoch {start_epoch}/{cfg.epochs}...")
+        except Exception as e:
+            print(f"[{cfg.exp_id}|seed{cfg.seed}] Không thể phục hồi checkpoint cũ ({e}), bắt đầu lại từ Epoch 1.")
+            start_epoch = 1
+
+    for epoch in range(start_epoch, cfg.epochs + 1):
         t0 = time.time()
         train_res = train_one_epoch(
             model, train_loader, criterion, optimizer, scheduler, scaler, cfg, device, ema
@@ -376,6 +422,7 @@ def run(cfg: Config) -> dict[str, Any]:
               f"Train Loss: {train_res['train_loss']:.4f} - Val Loss: {val_loss:.4f} - "
               f"Val Macro-F1: {macro_f1:.4f} - Val Top-1: {top1:.4f} ({epoch_time:.1f}s)")
 
+        # Lưu best model theo Macro-F1 Val
         if macro_f1 > best_macro_f1:
             best_macro_f1 = macro_f1
             best_epoch = epoch
@@ -385,6 +432,19 @@ def run(cfg: Config) -> dict[str, Any]:
                 "macro_f1": macro_f1,
                 "top1": top1,
             }, checkpoint_path)
+
+        # Lưu checkpoint sau MỖI EPOCH để nếu sập máy có thể chạy tiếp ngay!
+        torch.save({
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "scaler_state_dict": scaler.state_dict(),
+            "ema_shadow": {k: v.cpu() for k, v in ema.shadow.items()} if ema is not None else None,
+            "best_macro_f1": best_macro_f1,
+            "best_epoch": best_epoch,
+            "history": history,
+        }, last_checkpoint_path)
 
     # 6. Đánh giá lại checkpoint tốt nhất trên Val và lưu predictions
     checkpoint = torch.load(checkpoint_path, map_location=device)
