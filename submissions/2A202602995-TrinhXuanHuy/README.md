@@ -2,12 +2,13 @@
 **Môn học:** Deep Learning Advanced (Track 4 - Day 2)  
 **Học viên:** Trịnh Xuân Huy  
 **Mã sinh viên (MSV):** 2A202602995  
-**Thư mục bài nộp:** `submissions/2A202602995_trinh_xuan_huy/`  
+**Thư mục bài nộp:** `submissions/2A202602995-TrinhXuanHuy/`  
 
 ---
 
 ## 1. Liên kết Notebook chạy thực nghiệm
-- **Google Colab Notebook:** [Link Colab Lab Day 2 - TrinhXuanHuy](https://colab.research.google.com/drive/1example_deepweeds_day2_notebook) *(Hoặc mở trực tiếp file `code/lab_day2.ipynb` trên Google Colab / Kaggle)*
+- **Google Colab Notebook (Link chính thức):** [https://drive.google.com/file/d/1Rz41j5dr1bm9BCJvqPvv171HhOHkUBn6/view?usp=sharing](https://drive.google.com/file/d/1Rz41j5dr1bm9BCJvqPvv171HhOHkUBn6/view?usp=sharing)
+*(File notebook `code/lab_day2.ipynb` đã hoàn thiện và chạy đầy đủ từ Bước 0 đến Bước 5 trên GPU T4)*
 - **Kaggle Notebooks:** Khuyến nghị môi trường GPU T4 / P100 với tùy chọn *Save & Run All*.
 
 ---
@@ -29,7 +30,7 @@ Thực nghiệm được thiết kế và kiểm thử trên môi trường Pyth
 
 ## 3. Cấu trúc thư mục bài nộp
 ```
-submissions/2A202602995_trinh_xuan_huy/
+submissions/2A202602995-TrinhXuanHuy/
 ├── README.md               # File này: link thực thi, môi trường, hướng dẫn chạy
 ├── results.xlsx            # File Excel gồm 7 sheets tổng hợp toàn bộ kết quả thí nghiệm
 ├── report.md               # Báo cáo chi tiết thực nghiệm khoa học và phân tích lỗi
