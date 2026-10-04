@@ -153,8 +153,9 @@ class EMA:
 
 
 def train_one_epoch(model: nn.Module, loader, criterion, optimizer, scheduler, scaler,
-                    cfg: Config, device: torch.device, ema: EMA | None = None) -> dict[str, float]:
-    """Huấn luyện 1 epoch."""
+                    cfg: Config, device: torch.device, ema: EMA | None = None,
+                    epoch: int = 1) -> dict[str, float]:
+    """Huấn luyện 1 epoch với log tiến độ thời gian thực."""
     model.train()
     if cfg.init == "frozen":
         mdl.freeze_backbone(model)
@@ -165,8 +166,9 @@ def train_one_epoch(model: nn.Module, loader, criterion, optimizer, scheduler, s
     total_loss = 0.0
     total_samples = 0
     use_cuda = device.type == "cuda"
+    total_batches = len(loader)
 
-    for images, targets, _ in loader:
+    for batch_idx, (images, targets, _) in enumerate(loader):
         images = images.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
         batch_size = images.size(0)
@@ -196,6 +198,10 @@ def train_one_epoch(model: nn.Module, loader, criterion, optimizer, scheduler, s
 
         total_loss += loss.item() * batch_size
         total_samples += batch_size
+
+        if (batch_idx + 1) % 30 == 0 or (batch_idx + 1) == total_batches:
+            pct = 100.0 * (batch_idx + 1) / total_batches
+            print(f"  [{cfg.exp_id}|Epoch {epoch:02d}/{cfg.epochs:02d}] Batch {batch_idx+1:03d}/{total_batches:03d} ({pct:3.0f}%) | Step Loss: {loss.item():.4f}", flush=True)
 
     avg_loss = total_loss / max(1, total_samples)
     current_lr = optimizer.param_groups[0]["lr"]
@@ -290,6 +296,10 @@ def run(cfg: Config) -> dict[str, Any]:
         json.dump(asdict(cfg), f, indent=2)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == "cpu":
+        print(f"[{cfg.exp_id}|seed{cfg.seed}] ⚠️ CẢNH BÁO: ĐANG CHẠY TRÊN CPU! Tốc độ sẽ rất chậm (~12-15 phút/epoch). Trên Colab, vui lòng chọn menu: 'Thời gian chạy' (Runtime) -> 'Thay đổi loại thời gian chạy' -> Chọn 'T4 GPU'!", flush=True)
+    else:
+        print(f"[{cfg.exp_id}|seed{cfg.seed}] Bắt đầu huấn luyện trên GPU: {torch.cuda.get_device_name(0)} (AMP: {cfg.amp})", flush=True)
 
     # 1. Đọc và kiểm tra split
     train_df, val_df, test_df = ds.load_split(cfg.labels_dir, cfg.fold)
@@ -389,7 +399,8 @@ def run(cfg: Config) -> dict[str, Any]:
     for epoch in range(start_epoch, cfg.epochs + 1):
         t0 = time.time()
         train_res = train_one_epoch(
-            model, train_loader, criterion, optimizer, scheduler, scaler, cfg, device, ema
+            model, train_loader, criterion, optimizer, scheduler, scaler, cfg, device, ema,
+            epoch=epoch
         )
 
         if ema is not None:
@@ -420,7 +431,7 @@ def run(cfg: Config) -> dict[str, Any]:
 
         print(f"[{cfg.exp_id}|seed{cfg.seed}] Epoch {epoch}/{cfg.epochs} - "
               f"Train Loss: {train_res['train_loss']:.4f} - Val Loss: {val_loss:.4f} - "
-              f"Val Macro-F1: {macro_f1:.4f} - Val Top-1: {top1:.4f} ({epoch_time:.1f}s)")
+              f"Val Macro-F1: {macro_f1:.4f} - Val Top-1: {top1:.4f} ({epoch_time:.1f}s)", flush=True)
 
         # Lưu best model theo Macro-F1 Val
         if macro_f1 > best_macro_f1:
